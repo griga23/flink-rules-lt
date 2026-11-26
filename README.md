@@ -4,6 +4,56 @@ A Confluent Cloud Flink **Process Table Function (PTF)** that applies processing
 
 This is an experiment, not a production design. It relies on behaviour that the docs list as unsupported for PTFs (external connectivity), so it may break.
 
+## Architecture
+
+```mermaid
+flowchart LR
+    subgraph SQL["Flink SQL statements"]
+        direction TB
+        S1["<b>Statement 1</b><br/>INSERT INTO rg_processed<br/>SELECT ... FROM apply_rules_generic(...)"]
+        S2["<b>Statement 2 (writer)</b><br/>INSERT INTO rg_fired<br/>WHERE event_kind = 'FIRED'"]
+    end
+
+    subgraph PTF["PTF (Java)"]
+        direction TB
+        P1["<b>open()</b><br/>read connection params"]
+        P2["<b>first eval, once per subtask</b><br/>scan rules + fired history"]
+        P3["<b>eval, per reading</b><br/>rules by priority<br/>FILTER / TRANSFORM / ALERT<br/>skip one-shot if already fired"]
+        ST[("State per device<br/>seen, fireCount, firstFired<br/>TTL 30 d")]
+        P1 --> P2 --> P3
+        P3 <--> ST
+    end
+
+    subgraph LT["Lightning Tables (Kafka, compacted)"]
+        direction TB
+        R[("rg_rules<br/>key: rule_id")]
+        F[("rg_fired<br/>key: rule_id|device_id")]
+    end
+
+    RD[/"rg_readings<br/>(Faker, 3 rows/s)"/]
+    PR[/"rg_processed<br/>FIRED + RESULT rows"/]
+
+    RD -- "PARTITION BY device_id" --> S1
+    S1 --> PTF
+    P2 -. "HTTPS via<br/>lightning_connection" .-> R
+    P2 -. "HTTPS via<br/>lightning_connection" .-> F
+    P3 -- "FIRED, RESULT" --> PR
+    PR --> S2
+    S2 -- "upsert" --> F
+    INS["INSERT INTO rg_rules"] --> R
+
+    classDef sql fill:#e8f0fe,stroke:#4a6fa5,color:#1a1a1a
+    classDef ptf fill:#fff3e0,stroke:#c77c0e,color:#1a1a1a
+    classDef store fill:#e6f4ea,stroke:#3b8a55,color:#1a1a1a
+    classDef topic fill:#f3e8fd,stroke:#8a4fb3,color:#1a1a1a
+    class S1,S2,INS sql
+    class P1,P2,P3,ST ptf
+    class R,F store
+    class RD,PR topic
+```
+
+The loop that makes one-shot rules survive a recreate: the writer stores every `FIRED` row in `rg_fired`, and the next statement reads `rg_fired` at startup to restore its counts.
+
 ## How it works
 
 1. Rules are written to the `rg_rules` Lightning Table.

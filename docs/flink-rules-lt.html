@@ -1,0 +1,434 @@
+<title>Flink Rules on Lightning Tables</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: single reading column, summary table first, detail after.
+   Palette: ink, paper, slate rule, one teal accent; semantic ok/warn/bad kept separate. */
+:root {
+  --bg: #f7f8f9;
+  --surface: #ffffff;
+  --fg: #1b2530;
+  --muted: #5a6776;
+  --rule: #d9dee4;
+  --accent: #0b6e69;
+  --accent-bg: #e3f1f0;
+  --ok: #1f7a3d;
+  --ok-bg: #e4f3e8;
+  --warn: #8a5a00;
+  --warn-bg: #fbf0d9;
+  --bad: #a3322b;
+  --bad-bg: #f8e5e3;
+  --code-bg: #eef1f4;
+  --font-body: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12181f; --surface: #19212a; --fg: #e4e9ee; --muted: #9aa7b5; --rule: #2c3743;
+    --accent: #4fc3bb; --accent-bg: #153332; --ok: #6fd08c; --ok-bg: #16301f;
+    --warn: #e9b84f; --warn-bg: #36290f; --bad: #f08a82; --bad-bg: #3a1c1a; --code-bg: #212b36;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #12181f; --surface: #19212a; --fg: #e4e9ee; --muted: #9aa7b5; --rule: #2c3743;
+  --accent: #4fc3bb; --accent-bg: #153332; --ok: #6fd08c; --ok-bg: #16301f;
+  --warn: #e9b84f; --warn-bg: #36290f; --bad: #f08a82; --bad-bg: #3a1c1a; --code-bg: #212b36;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 16px; line-height: 1.6;
+  padding-block: 32px 64px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+main { max-width: 980px; margin: 0 auto; display: flex; flex-direction: column; gap: 40px; }
+section { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+h1 { font-size: clamp(1.7rem, 4vw, 2.2rem); line-height: 1.15; margin: 0; text-wrap: balance; letter-spacing: -0.01em; }
+h2 { font-size: 1.3rem; margin: 0; text-wrap: balance; padding-top: 8px; border-top: 1px solid var(--rule); }
+h3 { font-size: 1rem; margin: 6px 0 0; }
+p { margin: 0; max-width: 72ch; }
+.lede { color: var(--muted); font-size: 1.05rem; max-width: 66ch; }
+.meta { font-family: var(--font-mono); font-size: 0.78rem; color: var(--muted); letter-spacing: 0.02em; }
+code { font-family: var(--font-mono); font-size: 0.85em; background: var(--code-bg); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+pre { font-family: var(--font-mono); font-size: 0.82rem; background: var(--code-bg); padding: 14px 16px; border-radius: 6px; margin: 0; overflow-x: auto; line-height: 1.5; }
+pre code { background: none; padding: 0; font-size: inherit; }
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; min-width: 560px; font-size: 0.92rem; background: var(--surface); }
+th, td { text-align: left; vertical-align: top; padding: 9px 12px; border-bottom: 1px solid var(--rule); }
+th { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; background: var(--bg); }
+.pill { display: inline-block; font-size: 0.75rem; font-weight: 600; padding: 1px 9px; border-radius: 999px; white-space: nowrap; }
+.pill.ok { color: var(--ok); background: var(--ok-bg); }
+.pill.warn { color: var(--warn); background: var(--warn-bg); }
+.pill.bad { color: var(--bad); background: var(--bad-bg); }
+.pill.info { color: var(--accent); background: var(--accent-bg); }
+.pill.ptf { color: var(--bg); background: var(--accent); }
+.callout { background: var(--accent-bg); border-radius: 6px; padding: 14px 16px; }
+.callout.warn { background: var(--warn-bg); }
+.callout strong { font-weight: 600; }
+ul, ol { margin: 0; padding-left: 1.3em; display: flex; flex-direction: column; gap: 6px; max-width: 72ch; }
+a { color: var(--accent); }
+
+/* Architecture diagram */
+.diagram { overflow-x: auto; background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 12px; }
+.diagram svg { display: block; width: 100%; min-width: 760px; height: auto; }
+svg text { font-family: var(--font-body); fill: var(--fg); font-size: 13px; }
+svg .b { font-weight: 600; font-size: 14px; }
+svg .mono { font-family: var(--font-mono); font-size: 11.5px; fill: var(--muted); }
+svg .zlabel { letter-spacing: 0.06em; font-size: 11px; }
+svg .box { fill: var(--surface); stroke: var(--rule); stroke-width: 1.5; }
+svg .box.hl { stroke: var(--accent); stroke-width: 2; }
+svg .box.topic { stroke: var(--muted); }
+svg .box.tbl { stroke: var(--accent); }
+svg .zone { stroke: var(--rule); stroke-width: 1; stroke-dasharray: 3 4; }
+svg .zone.sql { fill: var(--accent-bg); fill-opacity: 0.45; }
+svg .zone.ptf { fill: var(--surface); stroke: var(--accent); stroke-width: 2; stroke-dasharray: none; }
+svg .tag { fill: var(--accent); }
+svg .tag-n { fill: var(--bg); font-size: 11px; font-weight: 700; letter-spacing: 0.06em; }
+svg .zone.lightning { fill: var(--code-bg); fill-opacity: 0.7; }
+svg .arrow { stroke: var(--muted); stroke-width: 1.6; fill: none; }
+svg .arrow.read { stroke: var(--accent); stroke-dasharray: 6 4; }
+svg .ah-w { fill: var(--muted); }
+svg .ah-r { fill: var(--accent); }
+svg .badge { fill: var(--accent); }
+svg .badge-n { fill: var(--bg); font-size: 11.5px; font-weight: 700; }
+svg .sep { stroke: var(--rule); stroke-width: 1; }
+.steps li::marker { color: var(--accent); font-weight: 700; }
+@media (max-width: 480px) { body { font-size: 15px; } }
+</style>
+
+<main>
+  <header style="display:flex;flex-direction:column;gap:12px">
+    <span class="meta">CONFLUENT CLOUD FLINK · EXPERIMENT · 2026-11-20 · UPDATED 2026-11-23</span>
+    <h1>Flink Rules on Lightning Tables</h1>
+    <p class="lede">A Process Table Function that applies filter, transform, alert and one-shot rules to a Faker IoT stream. The rules and the record of what already fired both live in Lightning Tables, and the PTF reads them once at startup. Tested on a live cluster in the <code>&lt;ENV_NAME&gt;</code> environment.</p>
+  </header>
+
+  <section>
+    <h2>What we found</h2>
+    <div class="scroll"><table>
+      <thead><tr><th>Question</th><th>Answer</th></tr></thead>
+      <tbody>
+        <tr><td>Can a PTF call a service with a raw <code>HttpClient</code>?</td><td><span class="pill bad">No</span> Every call timed out (<code>HttpConnectTimeoutException</code>). Outbound traffic is blocked.</td></tr>
+        <tr><td>Can a PTF use a <code>CREATE CONNECTION</code> bound with <code>USING CONNECTIONS</code>?</td><td><span class="pill warn">Works, undocumented</span> It works in the PTF. The docs say external connectivity is only for scalar and table UDFs, so this may change.</td></tr>
+        <tr><td>Can Flink SQL join a Lightning Table directly?</td><td><span class="pill info">Not documented</span> Lightning queries reject joins, subqueries and aggregates. The PTF calls the Lightning HTTP query API instead.</td></tr>
+        <tr><td>Does PTF state survive delete and recreate, same <code>uid</code>?</td><td><span class="pill bad">No</span> State belongs to the statement. The per-device <code>device_seen</code> counter restarts from 1.</td></tr>
+        <tr><td>How do one-shot rules survive a recreate?</td><td><span class="pill ok">Fired history in Lightning</span> <code>rg_fired</code> is loaded at startup and restores each (rule, device) count into state. No re-application was observed.</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section>
+    <h2>Architecture</h2>
+    <div class="diagram">
+    <svg viewBox="0 0 1000 890" role="img" aria-labelledby="arch-t arch-d">
+      <title id="arch-t">Architecture of the generic rules PTF: Java on the left, SQL on the right, Kafka topics below</title>
+      <desc id="arch-d">Left box, PTF, written in Java: open() reads the connection parameters, the first eval scans rg_rules and rg_fired through lightning_connection, per-device state is kept, and eval applies the rules and returns FIRED and RESULT rows. Right box, SQL: the Faker table rg_readings, Statement 1 which calls the apply_rules_generic function and inserts the returned rows into rg_processed, Statement 2 which copies FIRED rows from rg_processed into rg_fired, and the DDL. Statement 1 passes readings to the PTF and receives the rows back. Bottom band, Kafka topics: rg_rules and rg_fired are compacted topics queried as Lightning Tables, rg_processed is a plain topic. Rule authors insert into rg_rules.</desc>
+      <defs>
+        <marker id="ah-w" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path class="ah-w" d="M0 0 L10 5 L0 10 z"/></marker>
+        <marker id="ah-r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path class="ah-r" d="M0 0 L10 5 L0 10 z"/></marker>
+      </defs>
+
+      <!-- PTF zone (left) -->
+      <rect class="zone ptf" x="20" y="26" width="360" height="474" rx="10"/>
+      <rect class="tag" x="36" y="38" width="46" height="20" rx="10"/><text class="tag-n" x="59" y="52" text-anchor="middle">JAVA</text>
+      <text class="mono zlabel" x="92" y="52">PTF · apply_rules_generic</text>
+
+      <rect class="box" x="40" y="70" width="320" height="62" rx="6"/>
+      <text class="b" x="56" y="92">open()</text>
+      <text x="56" y="112">RuleClient reads the connection parameters</text>
+      <path class="arrow" d="M200 132 V150" marker-end="url(#ah-w)"/>
+
+      <rect class="box" x="40" y="152" width="320" height="76" rx="6"/>
+      <text class="b" x="56" y="174">First eval, once per subtask</text>
+      <text x="56" y="194">scan rg_rules: rules per sensor, by priority</text>
+      <text x="56" y="212">scan rg_fired: history of rule|device counts</text>
+      <circle class="badge" cx="340" cy="170" r="9"/><text class="badge-n" x="340" y="174" text-anchor="middle">2</text>
+      <path class="arrow" d="M200 228 V246" marker-end="url(#ah-w)"/>
+
+      <rect class="box" x="40" y="248" width="320" height="76" rx="6"/>
+      <text class="b" x="56" y="270">Per-device state</text>
+      <text x="56" y="290">seen · fireCount · firstFired · TTL 30 d</text>
+      <text x="56" y="308">first touch of a rule restores from history</text>
+      <path class="arrow" d="M200 324 V342" marker-end="url(#ah-w)"/>
+
+      <rect class="box hl" x="40" y="344" width="320" height="96" rx="6"/>
+      <text class="b" x="56" y="366">eval() for each reading</text>
+      <text x="56" y="386">rules of the sensor, in priority order</text>
+      <text x="56" y="404">FILTER · TRANSFORM · ALERT; one-shot skipped</text>
+      <text x="56" y="422">emits FIRED per rule that acted, then RESULT</text>
+      <circle class="badge" cx="340" cy="362" r="9"/><text class="badge-n" x="340" y="366" text-anchor="middle">4</text>
+
+      <text class="mono" x="36" y="466">ApplyRulesGenericPtf + RuleClient</text>
+
+      <!-- SQL zone (right) -->
+      <rect class="zone sql" x="460" y="26" width="520" height="474" rx="10"/>
+      <rect class="tag" x="476" y="38" width="40" height="20" rx="10"/><text class="tag-n" x="496" y="52" text-anchor="middle">SQL</text>
+      <text class="mono zlabel" x="526" y="52">FLINK STATEMENTS AND DDL</text>
+
+      <rect class="box topic" x="480" y="70" width="400" height="52" rx="6"/>
+      <text class="b" x="496" y="92">rg_readings</text>
+      <text class="mono" x="496" y="110">Faker table · 3 rows/s · 3 devices × 3 sensors</text>
+      <path class="arrow" d="M680 122 V140" marker-end="url(#ah-w)"/>
+
+      <rect class="box hl" x="480" y="142" width="400" height="132" rx="6"/>
+      <text class="b" x="496" y="164">Statement 1 · calls the function</text>
+      <text class="mono" x="496" y="184">INSERT INTO rg_processed SELECT …</text>
+      <text class="mono" x="496" y="200">FROM apply_rules_generic(</text>
+      <text class="mono" x="496" y="216">  input => TABLE rg_readings PARTITION BY device_id,</text>
+      <text class="mono" x="496" y="232">  rulesTable => 'rg_rules',</text>
+      <text class="mono" x="496" y="248">  firedTable => 'rg_fired', uid => 'generic-v1')</text>
+
+      <rect class="box hl" x="480" y="330" width="400" height="76" rx="6"/>
+      <text class="b" x="496" y="352">Statement 2 · writer</text>
+      <text class="mono" x="496" y="372">INSERT INTO rg_fired SELECT … FROM rg_processed</text>
+      <text class="mono" x="496" y="388">WHERE event_kind = 'FIRED'</text>
+
+      <rect class="box" x="560" y="426" width="320" height="48" rx="6"/>
+      <text class="b" x="576" y="446">DDL, run once</text>
+      <text class="mono" x="576" y="464">TABLE · CONNECTION · FUNCTION</text>
+
+      <!-- Between the boxes: the only interface -->
+      <path class="arrow" d="M478 208 H412 V392 H362" marker-end="url(#ah-w)"/>
+      <circle class="badge" cx="412" cy="300" r="9"/><text class="badge-n" x="412" y="304" text-anchor="middle">3</text>
+      <path class="arrow" d="M362 420 H428 V240 H478" marker-end="url(#ah-w)"/>
+      <circle class="badge" cx="428" cy="330" r="9"/><text class="badge-n" x="428" y="334" text-anchor="middle">5</text>
+
+      <!-- Connection -->
+      <path class="arrow read" d="M200 500 V524" marker-end="url(#ah-r)"/>
+      <circle class="badge" cx="218" cy="512" r="9"/><text class="badge-n" x="218" y="516" text-anchor="middle">2</text>
+      <rect class="box" x="40" y="526" width="320" height="66" rx="6"/>
+      <text class="b" x="56" y="548">lightning_connection</text>
+      <text class="mono" x="56" y="566">CREATE CONNECTION (SQL) · REST</text>
+      <text class="mono" x="56" y="582">bound to the function · Basic auth</text>
+
+      <!-- Kafka topics band -->
+      <rect class="zone lightning" x="20" y="620" width="960" height="176" rx="10"/>
+      <rect class="tag" x="464" y="772" width="52" height="20" rx="10"/><text class="tag-n" x="490" y="786" text-anchor="middle">KAFKA</text>
+      <text class="mono zlabel" x="964" y="786" text-anchor="end">TOPICS · rg_rules AND rg_fired ARE ALSO LIGHTNING TABLES</text>
+
+      <rect class="box tbl" x="40" y="650" width="320" height="116" rx="6"/>
+      <text class="b" x="56" y="674">rg_rules</text>
+      <text class="mono" x="56" y="692">key rule_id · Lightning Table</text>
+      <text x="56" y="716">rule_scope · rule_type · params · enabled</text>
+      <text x="56" y="734">one_shot · priority · version</text>
+      <text class="mono" x="56" y="758">9 rules · read once per subtask</text>
+
+      <rect class="box tbl" x="380" y="650" width="300" height="116" rx="6"/>
+      <text class="b" x="396" y="674">rg_fired</text>
+      <text class="mono" x="396" y="692">key rule_id|device_id · upsert</text>
+      <text x="396" y="716">fire_count · first_fired · last_fired</text>
+      <text x="396" y="734">one-shot record and monitoring</text>
+      <text class="mono" x="396" y="758">history older than 30 d ignored</text>
+
+      <rect class="box topic" x="700" y="650" width="280" height="116" rx="6"/>
+      <text class="b" x="716" y="674">rg_processed</text>
+      <text class="mono" x="716" y="692">plain topic · keyless · 1 d</text>
+      <text x="716" y="716">FIRED: one per rule that acted</text>
+      <text x="716" y="734">RESULT: one per reading</text>
+      <text class="mono" x="716" y="758">not a Lightning Table</text>
+
+      <!-- PTF reads through the connection -->
+      <path class="arrow read" d="M100 592 V648" marker-end="url(#ah-r)"/>
+      <text class="mono" x="108" y="610">SELECT * · HTTPS</text>
+      <path class="arrow read" d="M300 592 V612 H440 V648" marker-end="url(#ah-r)"/>
+      <text class="mono" x="310" y="606">SELECT * · once at start</text>
+
+      <!-- SQL statements and the topics -->
+      <path class="arrow" d="M880 230 H940 V648" marker-end="url(#ah-w)"/>
+      <circle class="badge" cx="940" cy="540" r="9"/><text class="badge-n" x="940" y="544" text-anchor="middle">5</text>
+      <path class="arrow" d="M920 648 V388 H882" marker-end="url(#ah-w)"/>
+      <circle class="badge" cx="920" cy="580" r="9"/><text class="badge-n" x="920" y="584" text-anchor="middle">6</text>
+      <path class="arrow" d="M520 406 V648" marker-end="url(#ah-w)"/>
+      <circle class="badge" cx="520" cy="560" r="9"/><text class="badge-n" x="520" y="564" text-anchor="middle">7</text>
+
+      <!-- Rule authors (SQL) -->
+      <rect class="box" x="40" y="816" width="320" height="52" rx="6"/>
+      <text class="b" x="56" y="838">Rule authors · SQL</text>
+      <text class="mono" x="56" y="856">INSERT INTO rg_rules … or a producer</text>
+      <path class="arrow" d="M200 816 V768" marker-end="url(#ah-w)"/>
+      <circle class="badge" cx="218" cy="792" r="9"/><text class="badge-n" x="218" y="796" text-anchor="middle">1</text>
+
+      <!-- Legend -->
+      <rect class="box" x="620" y="816" width="360" height="52" rx="6"/>
+      <line class="arrow" x1="638" y1="832" x2="680" y2="832" marker-end="url(#ah-w)"/>
+      <text class="mono" x="692" y="836">data between statements, topics, PTF</text>
+      <line class="arrow read" x1="638" y1="854" x2="680" y2="854" marker-end="url(#ah-r)"/>
+      <text class="mono" x="692" y="858">HTTPS read through lightning_connection</text>
+    </svg>
+    </div>
+    <p>The <strong>PTF</strong> (left) is Java: it loads the rules, keeps the per-device state and decides what fires. <strong>SQL</strong> (right) creates the tables, the connection and the function, calls the function in Statement 1, and runs the writer. The two meet only at the call in Statement 1 and the rows it gets back. The <strong>Kafka topics</strong> (bottom) hold the data: <code>rg_rules</code> and <code>rg_fired</code> are compacted topics that Lightning serves as tables, <code>rg_processed</code> is a plain topic.</p>
+    <ol class="steps">
+      <li><span class="pill info">SQL</span> <strong>Rules are written</strong> to <code>rg_rules</code> with <code>INSERT INTO</code> or any Kafka producer. Lightning ingests the compacted topic.</li>
+      <li><span class="pill ptf">PTF</span> <strong>At startup</strong> <code>open()</code> reads the connection parameters. The first <code>eval</code> of each subtask scans <code>rg_rules</code> and <code>rg_fired</code> once with <code>SELECT *</code> through <code>lightning_connection</code>. If a scan fails the PTF throws; running without rules or history would silently re-fire one-shot rules.</li>
+      <li><span class="pill info">SQL</span> <strong>Statement 1 passes the readings</strong> of <code>rg_readings</code> to the function, keyed by <code>device_id</code>, so each device has its own state.</li>
+      <li><span class="pill ptf">PTF</span> <strong>The function evaluates</strong> the rules of the reading's sensor in priority order. On the first touch of a (rule, device) it restores the count and first-fired time from the loaded history into Flink state. A one-shot rule with a count above zero is skipped.</li>
+      <li><span class="pill ptf">PTF</span> <strong>It returns rows:</strong> one <code>FIRED</code> row per rule that acted, then one <code>RESULT</code> row unless a FILTER dropped the reading. Statement 1 inserts them into the <code>rg_processed</code> topic.</li>
+      <li><span class="pill info">SQL</span> <strong>The writer statement</strong> reads the <code>rg_processed</code> topic and keeps only <code>FIRED</code> rows.</li>
+      <li><span class="pill info">SQL</span> <strong>It upserts them</strong> into <code>rg_fired</code> under the key <code>rule_id|device_id</code>. Lightning ingests the topic. The next statement incarnation reads it at step 2.</li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>Rule semantics</h2>
+    <p>A rule belongs to a <code>rule_scope</code> (the sensor type) and runs in <code>priority</code> order. All rules compare against the raw reading, not a transformed value. Disabled rules are not loaded, so a sensor with no enabled rule gets <code>NO_RULE</code>.</p>
+    <div class="scroll"><table>
+      <thead><tr><th>Type</th><th><code>params</code></th><th>Effect</th></tr></thead>
+      <tbody>
+        <tr><td><code>FILTER</code></td><td><code>{"min":…,"max":…}</code></td><td>Outside the range: action <code>DROPPED</code>, no <code>RESULT</code> row, later rules are not evaluated.</td></tr>
+        <tr><td><code>TRANSFORM</code></td><td><code>{"fn":"C_TO_F"}</code> or <code>"HPA_TO_PSI"</code></td><td>Sets <code>value</code> and <code>unit</code>. An unknown <code>fn</code> adds <code>BAD_RULE:&lt;id&gt;</code> to the status.</td></tr>
+        <tr><td><code>ALERT</code></td><td><code>{"above":…}</code></td><td>Raw value above the threshold sets <code>alert = true</code>.</td></tr>
+      </tbody>
+    </table></div>
+    <p><code>one_shot</code> rules act only the first time per (rule, device). Later readings get <code>SKIPPED_ONE_SHOT:&lt;rule_id&gt;</code> in the <code>RESULT</code> status. The example data in <code>sql/32_generic_rules_data.sql</code>:</p>
+    <div class="scroll"><table>
+      <thead><tr><th>Sensor</th><th>Filter</th><th>Transform (one-shot)</th><th>Alert</th></tr></thead>
+      <tbody>
+        <tr><td>temperature</td><td>-50 to 150</td><td>°C to °F</td><td>above 30</td></tr>
+        <tr><td>humidity</td><td>0 to 100</td><td>none</td><td>above 85</td></tr>
+        <tr><td>pressure</td><td>300 to 1100</td><td>hPa to psi</td><td>above 1050</td></tr>
+        <tr><td>vibration</td><td>0 to 50 (disabled)</td><td>none</td><td>none</td></tr>
+      </tbody>
+    </table></div>
+    <p>The Faker source draws every reading uniformly from 0 to 1100, so most temperature and humidity readings are out of range and get dropped. That is a property of the test data, not of the PTF.</p>
+  </section>
+
+  <section>
+    <h2>Delivery guarantees</h2>
+    <div class="callout warn"><strong>Short version.</strong> Within one running statement the PTF state is exactly-once. One-shot rules are effectively once per (rule, device), with a duplicate window when the statement is rebuilt before a firing has reached <code>rg_fired</code>. The Faker source cannot be replayed, so end-to-end guarantees only apply to a real Kafka source.</div>
+    <div class="scroll"><table>
+      <thead><tr><th>Stage</th><th>Guarantee</th><th>Basis</th></tr></thead>
+      <tbody>
+        <tr><td>PTF state (<code>seen</code>, counts)</td><td>Exactly-once per statement, restored from the last checkpoint on failure, stop or resume. TTL 30 days.</td><td><span class="pill info">Flink design</span> Stop and resume was observed on an earlier prototype with the same state mechanism, not repeated for the generic PTF.</td></tr>
+        <tr><td>Rules and history</td><td>Loaded once per subtask. Edits to <code>rg_rules</code> are invisible until the statement is recreated.</td><td><span class="pill ok">By design</span></td></tr>
+        <tr><td>PTF output topic</td><td>Exactly-once for readers that only see committed data, at-least-once otherwise.</td><td><span class="pill warn">Not tested</span> Recalled from the Confluent Flink docs.</td></tr>
+        <tr><td>Writer to <code>rg_fired</code></td><td>Upserts on <code>rule_id|device_id</code>, so duplicates collapse. <code>rg_processed</code> is keyless, so two <code>FIRED</code> rows of one key could reach the writer out of order and a lower <code>fire_count</code> could win. One-shot decisions only test for a count above zero, so they are unaffected.</td><td><span class="pill warn">Reasoning</span> The ordering case was not isolated in a test.</td></tr>
+        <tr><td>One-shot application</td><td>Effectively once per (rule, device): state blocks repeats while running, restored history blocks them after a rebuild.</td><td><span class="pill ok">Tested</span> See the test results below.</td></tr>
+      </tbody>
+    </table></div>
+    <h3>Where a one-shot rule can still go wrong</h3>
+    <ul>
+      <li><strong>Rebuild race (can fire twice).</strong> A firing travels PTF output topic, writer statement, <code>rg_fired</code> topic, Lightning ingestion. If the PTF statement is recreated before that finishes, the new statement does not see the firing.</li>
+      <li><strong>30-day window (can fire again).</strong> History rows whose <code>last_fired</code> is older than 30 days are ignored at startup, and state expires after 30 days. A (rule, device) idle for longer can fire again.</li>
+      <li><strong>Startup failure is fatal by design.</strong> The PTF throws if a scan fails, so the statement fails or restarts instead of running blind.</li>
+      <li><strong>Memory and size.</strong> Each scan is a single HTTP response with a 60 s timeout, no paging, and the whole fired table in the window is held in memory per subtask. Lightning response limits and retention were not tested.</li>
+      <li><strong>Faker source.</strong> It generates new random rows on restart, so it does not replay. A Kafka source stores its offsets in the checkpoint.</li>
+    </ul>
+    <p>To close the rebuild race, the PTF would have to write the fired record itself before emitting the row. A PTF has one output, so that needs a second output path or a sink the PTF controls, which was not built.</p>
+  </section>
+
+  <section>
+    <h2>Test results</h2>
+    <div class="scroll"><table>
+      <thead><tr><th>Test</th><th>Setup</th><th>Result</th></tr></thead>
+      <tbody>
+        <tr><td>Raw HTTP in a PTF</td><td>Row-semantic PTF, <code>HttpClient</code> to the Lightning endpoint</td><td><span class="pill bad">Blocked</span> Connect timeout on every row.</td></tr>
+        <tr><td>Connection from a UDF</td><td>Placeholder credentials</td><td><span class="pill ok">Reachable</span> HTTP 401 from Lightning, so the network path works.</td></tr>
+        <tr><td>Connection-bound PTF, real key</td><td>Per-row lookup prototype</td><td><span class="pill ok">Works</span> 88 rows correct: °C to °F, hPa to psi, alerts, disabled sensor filtered, unknown sensor <code>NO_RULE</code>.</td></tr>
+        <tr><td>Generic PTF, first run</td><td><code>uid</code> <code>generic-v1</code></td><td><span class="pill ok">6 of 6 once</span> The 6 one-shot pairs (3 devices, temperature and pressure conversion) each fired once. After delete and recreate with the same uid no conversion fired again and <code>SKIPPED_ONE_SHOT</code> was emitted.</td></tr>
+      </tbody>
+    </table></div>
+    <h3>Recreate test and performance, 2026-11-23</h3>
+    <p>A new statement <code>rg-run-v3</code> with the same SQL and <code>uid</code> as the stopped <code>rg-run-v2</code> was created at 08:19:09Z and ran for 9.5 minutes. The writer was not started, because it would replay the whole <code>rg_processed</code> topic into <code>rg_fired</code>. Evidence statements filtered <code>rg_processed</code> to rows from after the restart.</p>
+    <ul>
+      <li><strong>Startup:</strong> PENDING to RUNNING in 40 s. The first output row appeared about 55 s after creation.</li>
+      <li><strong>State was reset:</strong> the first rows had <code>device_seen</code> between 1 and 62, while <code>fire_count</code> continued from the <code>rg_fired</code> history (for example 378 to 398 for <code>r-hum-filter</code>) and <code>first_fired</code> kept its old value.</li>
+      <li><strong>No one-shot rule fired again:</strong> a filter for <code>FIRED</code> rows of the convert rules, or with <code>fire_count = 1</code>, read the 4,348-row backlog and then about 190 to 200 rows a minute, and produced 0 rows.</li>
+      <li><strong>Every (device, sensor) pair skipped:</strong> a keep-first-row statement produced exactly 6 rows, one per device for temperature (<code>SKIPPED_ONE_SHOT:r-temp-convert</code>) and for pressure (<code>SKIPPED_ONE_SHOT:r-press-convert</code>). Temperature pairs appear later because the temperature filter drops about 86% of readings before the convert rule runs.</li>
+      <li><strong>Count regression:</strong> <code>r-temp-filter</code> for dev-A was at <code>fire_count</code> 341 when the old run stopped and at 338 on the first row after the restart. That fits the rebuild race, where the last firings had not reached <code>rg_fired</code>. It does not change one-shot decisions, which only test for a count above zero. The cause was not isolated.</li>
+    </ul>
+    <div class="scroll"><table>
+      <thead><tr><th>Metric (1-minute buckets, 08:20 to 08:26)</th><th>Value</th></tr></thead>
+      <tbody>
+        <tr><td>Records in</td><td>about 180 per minute, which is the Faker's 3 rows/s</td></tr>
+        <tr><td>Records out (<code>FIRED</code> and <code>RESULT</code>)</td><td>about 191 per minute</td></tr>
+        <tr><td>Busy time</td><td>3 to 12 ms per second; 677 ms per second in the first minute (startup scans)</td></tr>
+        <tr><td>Idle time / backpressure</td><td>999 ms per second / 0</td></tr>
+        <tr><td>State size</td><td>3 to 11 KB, three devices</td></tr>
+        <tr><td>Compute</td><td>0.5 CFU</td></tr>
+      </tbody>
+    </table></div>
+    <p>The Faker caps input at 3 rows/s, so these numbers show headroom, not capacity. Maximum throughput, per-row latency and the cost of the startup scans on larger tables were not measured. The external egress metric returned no data.</p>
+    <h3>Rules version update, 2026-11-23</h3>
+    <p>The rule <code>r-temp-alert</code> was changed from version 1 (alert above 30) to version 2 (alert above 100) with <code>INSERT INTO rg_rules</code>, an upsert on <code>rule_id</code>, at 09:02:52Z while <code>rg-run-v4</code> was running. An evidence filter kept every <code>r-temp-alert</code> row with its <code>rule_version</code> and raw value. The temperature filter drops readings above 150, so alerts exist for raw values between the threshold and 150.</p>
+    <ul>
+      <li><strong>Running statement: no reload.</strong> For more than 4 minutes after the edit <code>rg-run-v4</code> still emitted version 1, with raw values 34.39, 36.72, 38.74, 42.7, 62.75 and 70.08, all below the new threshold.</li>
+      <li><strong>Recreated statement: the new version applies.</strong> <code>rg-run-v5</code> (same SQL and <code>uid</code>) emitted version 2 only for raw values above 100, from 100.06 to 148.62. A filter for version 2 rows at or below 100 read 77 rows and emitted none.</li>
+      <li><strong>Propagation:</strong> the recreated statement scanned about 6 minutes after the edit and already saw version 2. The actual time Lightning needs to ingest an edit was not measured.</li>
+      <li><strong>Not checked:</strong> reading the rule row back from Lightning (the CLI used has no query command), an edit to a one-shot rule, and fire counts across a version change.</li>
+    </ul>
+    <p>The rule was restored afterwards to version 1 so the table matches <code>sql/32</code>. Not yet tested: stop and resume of the generic statement.</p>
+  </section>
+
+  <section>
+    <h2>Components</h2>
+    <div class="scroll"><table>
+      <thead><tr><th>Class</th><th>Registered as</th><th>Role</th></tr></thead>
+      <tbody>
+        <tr><td><code>ApplyRulesGenericPtf</code></td><td><code>apply_rules_generic</code></td><td>Set-semantic PTF (<code>PARTITION BY device_id</code>). Loads rules and fired history once, keeps <code>DeviceState{seen, fireCount, firstFired}</code> with a 30 day TTL, emits <code>FIRED</code> and <code>RESULT</code> rows.</td></tr>
+        <tr><td><code>RuleClient</code></td><td>(helper)</td><td>Reads the connection parameters in <code>open()</code> and runs <code>SELECT *</code> against the Lightning query API with Basic auth. <code>scanAll</code> lowercases column names and returns every value as a string.</td></tr>
+      </tbody>
+    </table></div>
+    <p>Build with <code>mvn -q clean package</code>. The JAR is shaded with Jackson; the Flink API (2.1.0) is <code>provided</code>. Compile with <code>-parameters</code> (already in <code>pom.xml</code>) or PTF state and argument names fail to resolve. Connection values are read with:</p>
+<pre><code>context.getJobParameter("lightning_connection.endpoint", null)
+context.getJobParameter("lightning_connection.username", null)
+context.getJobParameter("lightning_connection.password", null)</code></pre>
+    <p>Register the function (replace the artifact id) and run the PTF, then the writer:</p>
+<pre><code>CREATE FUNCTION apply_rules_generic AS 'demo.iot.ApplyRulesGenericPtf'
+  USING JAR 'confluent-artifact://&lt;ARTIFACT&gt;'
+  USING CONNECTIONS(`&lt;ENV_NAME&gt;`.`&lt;CLUSTER_NAME&gt;`.`lightning_connection`);
+
+INSERT INTO rg_processed
+SELECT event_kind, device_id, sensor_type, raw_value, `value`, unit, alert, rule_id,
+       rule_version, action, fire_count, first_fired, event_ts, status, device_seen
+FROM apply_rules_generic(
+  input => TABLE rg_readings PARTITION BY device_id,
+  env => '&lt;ENV_ID&gt;', cluster => '&lt;CLUSTER_ID&gt;',
+  rulesTable => 'rg_rules', firedTable => 'rg_fired',
+  uid => 'generic-v1');
+
+INSERT INTO rg_fired
+SELECT CONCAT(rule_id, '|', device_id), rule_id, rule_version, device_id, action,
+       raw_value, `value`, fire_count, first_fired, event_ts
+FROM rg_processed WHERE event_kind = 'FIRED';</code></pre>
+    <p>Run order: <code>03_connection.sql</code>, <code>30_generic_rules.sql</code>, <code>31_generic_fired.sql</code>, enable Lightning on both topics, <code>32_generic_rules_data.sql</code>, <code>33_generic_io.sql</code>, the function, <code>34_generic_run.sql</code>, <code>35_generic_fired_writer.sql</code>. Enable Lightning with <code>confluent rtce rtce-topic create --cloud aws --region eu-central-1 --topic-name &lt;topic&gt; --environment &lt;ENV_ID&gt; --cluster &lt;CLUSTER_ID&gt;</code>; the phase goes from PENDING to ACTIVE in one to three minutes.</p>
+    <p><code>status</code> values on <code>RESULT</code> rows: <code>OK</code>, <code>NO_RULE</code>, <code>SKIPPED_ONE_SHOT:&lt;rule_id&gt;</code> and <code>BAD_RULE:&lt;rule_id&gt;</code>, joined by commas when several apply.</p>
+  </section>
+
+  <section>
+    <h2>Things that cost us time</h2>
+    <ul>
+      <li><strong>Column case in Lightning SQL.</strong> Unquoted column names fold to uppercase. Backticking a lowercase column in <code>WHERE</code> returns "Column not found". Leave columns unquoted; table names may be quoted.</li>
+      <li><strong><code>scope</code> is reserved</strong> in Flink SQL, hence <code>rule_scope</code>.</li>
+      <li><strong>Updating the connection.</strong> <code>ALTER CONNECTION … SET</code> failed with "multiple authentication credentials". Drop and recreate it.</li>
+      <li><strong>UDFs are immutable.</strong> Upload a new artifact, drop the function, recreate it with <code>USING JAR</code> and <code>USING CONNECTIONS</code>, then recreate dependent statements.</li>
+      <li><strong>Global API key limit.</strong> Lightning needs a Global key, and the limit is 2 per user.</li>
+      <li><strong>Reading results.</strong> The CLI cannot fetch SELECT results and <code>confluent flink shell</code> needs a TTY. The Confluent Cloud MCP server can read topics (<code>consume_kafka_messages</code>, no Kafka key needed), but it returns at most 10 of the newest messages per call and cannot filter. For exhaustive checks, write a filter statement's output to a small evidence topic.</li>
+      <li><strong>Metrics lag.</strong> The Metrics API showed nothing for the first one to two minutes of a statement.</li>
+      <li><strong>Statement start is slow.</strong> A new PTF statement took about 40 seconds from creation to RUNNING.</li>
+      <li><strong>Statement names</strong> allow only lowercase letters, digits and hyphens, and must be unique, so a recreate needs a new name.</li>
+      <li><strong>Expired CLI login</strong> makes polling loops spin silently. In zsh, keep flags in an array; an unquoted string variable is not split into arguments.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>What is left in the environment</h2>
+    <p>Cleaned up on 2026-11-23. Nothing is running. About a dozen stopped statements from the last tests remain; they cost nothing. What remains for further testing, in <code>&lt;ENV_ID&gt;</code> on cluster <code>&lt;CLUSTER_ID&gt;</code> (<code>&lt;CLUSTER_NAME&gt;</code>, AWS eu-central-1): tables <code>rg_rules</code> and <code>rg_fired</code> (Lightning-enabled), <code>rg_readings</code> and <code>rg_processed</code>, function <code>apply_rules_generic</code>, artifact <code>iot-rules-generic-v2</code> (<code>&lt;ARTIFACT_ID&gt;</code>, the trimmed jar), and connection <code>lightning_connection</code> holding Global API key <code>&lt;API_KEY_ID&gt;</code>. Delete the key when finished.</p>
+    <div class="callout warn"><strong>Before the next one-shot test.</strong> <code>rg_fired</code> still holds the firing history from today's runs. A new statement loads it at startup, so every one-shot rule is skipped from the first reading. For a clean test, write tombstones for its keys first, or point the PTF at a fresh fired table.</div>
+    <p>Removed: the earlier prototypes' tables, functions, view and artifacts, the five <code>rg_ev*</code> evidence tables, Lightning on the three old rules and marker topics, and every statement. Other resources in the environment are not part of this experiment and were not touched. The teardown for what remains is in <code>CLAUDE.md</code>.</p>
+  </section>
+
+  <section>
+    <h2>Sources</h2>
+    <ul>
+      <li><a href="https://docs.confluent.io/cloud/current/lightning-tables/overview.html">Lightning Tables overview</a>, <a href="https://docs.confluent.io/cloud/current/lightning-tables/limitations.html">limitations</a> and <a href="https://docs.confluent.io/cloud/current/lightning-tables/query/api.html">query API</a></li>
+      <li><a href="https://docs.confluent.io/cloud/current/flink/concepts/user-defined-functions.html">User-defined functions and external connectivity</a></li>
+      <li><a href="https://docs.confluent.io/cloud/current/flink/concepts/process-table-functions.html">Process Table Functions</a> and <a href="https://docs.confluent.io/cloud/current/flink/how-to-guides/create-ptf.html">how to create one</a></li>
+      <li><a href="https://docs.confluent.io/cloud/current/flink/how-to-guides/custom-sample-data.html">Generate custom sample data (Faker)</a></li>
+      <li><a href="https://github.com/griga23/flink-udf-examples/blob/main/docs/scalar/SchemaRegistryAvroDeserializer.md">External-connection UDF example</a></li>
+    </ul>
+  </section>
+</main>
